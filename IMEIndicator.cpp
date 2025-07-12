@@ -37,13 +37,26 @@ POINT GetCaretScreenPos() {
     GUITHREADINFO info = { sizeof(info) };
     HWND hwnd = GetForegroundWindow();
     DWORD tid = GetWindowThreadProcessId(hwnd, NULL);
-    if (GetGUIThreadInfo(tid, &info) && info.hwndCaret) {
-        pt.x = info.rcCaret.left;
-        pt.y = info.rcCaret.top;
-        ClientToScreen(info.hwndCaret, &pt);
-    } else {
-        GetCursorPos(&pt);
+    if (GetGUIThreadInfo(tid, &info)) {
+        if (info.hwndCaret && !IsRectEmpty(&info.rcCaret)) {
+            pt.x = info.rcCaret.left;
+            pt.y = info.rcCaret.top;
+            ClientToScreen(info.hwndCaret, &pt);
+            return pt;
+        }
+        else if (info.hwndFocus) {
+            // フォーカスコントロールの左上に fallback
+            RECT rc;
+            if (GetClientRect(info.hwndFocus, &rc)) {
+                pt.x = rc.left;
+                pt.y = rc.top;
+                ClientToScreen(info.hwndFocus, &pt);
+                return pt;
+            }
+        }
     }
+    // 最後の手段：マウス座標
+    GetCursorPos(&pt);
     return pt;
 }
 
@@ -80,12 +93,18 @@ void CALLBACK WinEventProc(HWINEVENTHOOK, DWORD event, HWND, LONG idObject, LONG
 DWORD WINAPI PollFallbackThread(LPVOID) {
     while (true) {
         ULONGLONG now = GetTickCount64();
-        if (now - lastEventTime > 5000) {
+        if (now - lastEventTime > 3000) {
             BOOL current = CheckIMEStatus();
             if (current != isImeOpen) {
                 isImeOpen = current;
                 if (current) ShowOverlay();
                 else HideOverlay();
+            }
+            else
+            {
+                if (isImeOpen) {
+					ShowOverlay();  // 位置を更新
+                }
             }
             lastEventTime = now;
         }
